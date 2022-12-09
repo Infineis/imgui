@@ -55,6 +55,9 @@ Index of this file:
 #include <math.h>       // sqrtf, fabsf, fmodf, powf, floorf, ceilf, cosf, sinf
 #include <limits.h>     // INT_MIN, INT_MAX
 
+#include <foundation/log.h>
+#include <foundation/exception.h>
+
 // Enable SSE intrinsics if available
 #if (defined __SSE__ || defined __x86_64__ || defined _M_X64 || (defined(_M_IX86_FP) && (_M_IX86_FP >= 1))) && !defined(IMGUI_DISABLE_SSE)
 #define IMGUI_ENABLE_SSE
@@ -2476,6 +2479,11 @@ struct ImGuiTableColumn
     ImU8                    SortDirectionsAvailMask : 4;    // Mask of available sort directions (1-bit each)
     ImU8                    SortDirectionsAvailList;        // Ordered of available sort directions (2-bits each)
 
+    // ###############################################################################
+	void*                         RenderPayload;
+    ImGuiTableColumnRenderHandler RenderCallback;
+	// ###############################################################################
+
     ImGuiTableColumn()
     {
         memset(this, 0, sizeof(*this));
@@ -3209,6 +3217,22 @@ extern const char*  ImGuiTestEngine_FindItemDebugLabel(ImGuiContext* ctx, ImGuiI
 #else
 #define IMGUI_TEST_ENGINE_ITEM_ADD(_BB,_ID)                 ((void)0)
 #define IMGUI_TEST_ENGINE_ITEM_INFO(_ID,_LABEL,_FLAGS)      ((void)g)
+#endif
+
+#if BUILD_DEBUG
+#define IMGUI_HOVERED_DEBUG_BREAK(id, p_min, p_max) \
+    if (ImGui::IsKeyPressed(ImGuiKey_F11, false) && ImGui::IsKeyDown(ImGuiKey_RightCtrl)) \
+    { \
+        const ImVec2 mouse_position = ImGui::GetMousePos(); \
+        const ImRect rect(p_min, p_max); \
+        if (rect.Contains(mouse_position)) \
+        { \
+            log_warnf(0, WARNING_UI, STRING_CONST("Inspecting %s"), id ? id : "control"); \
+            exception_raise_debug_break(); \
+        } \
+    }
+#else
+#define IMGUI_HOVERED_DEBUG_BREAK(id, p_min, p_max) ((void)0);
 #endif
 
 //-----------------------------------------------------------------------------

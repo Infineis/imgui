@@ -3728,6 +3728,8 @@ void ImFont::RenderText(ImDrawList* draw_list, float size, const ImVec2& pos, Im
         x += char_width;
     }
 
+    IMGUI_HOVERED_DEBUG_BREAK(text_begin, ImVec2(start_x, pos.y), ImVec2(x, ImMax(y, pos.y + size)));
+
     // Give back unused vertices (clipped ones, blanks) ~ this is essentially a PrimUnreserve() action.
     draw_list->VtxBuffer.Size = (int)(vtx_write - draw_list->VtxBuffer.Data); // Same as calling shrink()
     draw_list->IdxBuffer.Size = (int)(idx_write - draw_list->IdxBuffer.Data);

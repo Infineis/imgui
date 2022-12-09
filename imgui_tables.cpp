@@ -1422,7 +1422,9 @@ void    ImGui::EndTable()
 
 // See "COLUMN SIZING POLICIES" comments at the top of this file
 // If (init_width_or_weight <= 0.0f) it is ignored
-void ImGui::TableSetupColumn(const char* label, ImGuiTableColumnFlags flags, float init_width_or_weight, ImGuiID user_id)
+// ###############################################################################
+void ImGui::TableSetupColumn(const char* label, ImGuiTableColumnFlags flags, float init_width_or_weight, ImGuiID user_id, ImGuiTableColumnRenderHandler render_callbak, void* render_payload)
+// ###############################################################################
 {
     ImGuiContext& g = *GImGui;
     ImGuiTable* table = g.CurrentTable;
@@ -1437,6 +1439,10 @@ void ImGui::TableSetupColumn(const char* label, ImGuiTableColumnFlags flags, flo
 
     ImGuiTableColumn* column = &table->Columns[table->DeclColumnsCount];
     table->DeclColumnsCount++;
+	// ###############################################################################
+    column->RenderCallback = render_callbak;
+    column->RenderPayload = render_payload;
+	// ###############################################################################
 
     // Assert when passing a width or weight if policy is entirely left to default, to avoid storing width into weight and vice-versa.
     // Give a grace to users of ImGuiTableFlags_ScrollX.
@@ -1683,6 +1689,20 @@ void ImGui::TableSetBgColor(ImGuiTableBgTarget target, ImU32 color, int column_n
 // - TableBeginRow() [Internal]
 // - TableEndRow() [Internal]
 //-------------------------------------------------------------------------
+
+ImVec4 ImGui::TableGetRowRect()
+{
+    ImGuiContext& g = *GImGui;
+    ImGuiTable* table = g.CurrentTable;
+    if (!table)
+        return ImVec4();
+
+    const float bg_y1 = table->RowPosY1;
+    const float bg_y2 = table->RowPosY2;
+    ImRect row_rect(table->WorkRect.Min.x, bg_y1, table->WorkRect.Max.x, bg_y2);
+    row_rect.ClipWith(table->BgClipRect);
+    return ImVec4(row_rect.Min.x, row_rect.Min.y, row_rect.Max.x, row_rect.Max.y);
+}
 
 // [Public] Note: for row coloring we use ->RowBgColorCounter which is the same value without counting header rows
 int ImGui::TableGetRowIndex()
@@ -2905,6 +2925,14 @@ void ImGui::TableHeader(const char* label)
     if (label == NULL)
         label = "";
     const char* label_end = FindRenderedTextEnd(label);
+	// ###############################################################################
+    /// # BEGIN PATCH 2022-10-14 (Use the characters || to distinguish between the displayed label and the tooltip label)
+    const char* full_label_end = label_end;
+    const char* tooltip_sep = strstr(label, "||");
+    if (tooltip_sep)
+        label_end = tooltip_sep;
+    /// # END PATCH 2022-10-14
+	// ###############################################################################
     ImVec2 label_size = CalcTextSize(label, label_end, true);
     ImVec2 label_pos = window->DC.CursorPos;
 
@@ -3013,14 +3041,40 @@ void ImGui::TableHeader(const char* label)
         }
     }
 
-    // Render clipped label. Clipping here ensure that in the majority of situations, all our header cells will
-    // be merged into a single draw call.
-    //window->DrawList->AddCircleFilled(ImVec2(ellipsis_max, label_pos.y), 40, IM_COL32_WHITE);
-    RenderTextEllipsis(window->DrawList, label_pos, ImVec2(ellipsis_max, label_pos.y + label_height + g.Style.FramePadding.y), ellipsis_max, ellipsis_max, label, label_end, &label_size);
+	// ###############################################################################
+    ImGuiTableColumnRenderHandler custom_handler = column->RenderCallback;
+    if (custom_handler)
+    {
+        SameLine(-2.0f);
+        custom_handler(label, column->RenderPayload);
+    }
+    else
+    {
+        // Render clipped label. Clipping here ensure that in the majority of situations, all our header cells will
+        // be merged into a single draw call.
+        //window->DrawList->AddCircleFilled(ImVec2(ellipsis_max, label_pos.y), 40, IM_COL32_WHITE);
+        RenderTextEllipsis(window->DrawList, label_pos, ImVec2(ellipsis_max, label_pos.y + label_height + g.Style.FramePadding.y), ellipsis_max, ellipsis_max, label, label_end, &label_size);
+    }
 
+    /// # BEGIN PATCH 2022-10-14 (Use the characters || to distinguish between the displayed label and the tooltip label)
     const bool text_clipped = label_size.x > (ellipsis_max - label_pos.x);
-    if (text_clipped && hovered && g.ActiveId == 0 && IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-        SetTooltip("%.*s", (int)(label_end - label), label);
+    bool show_tooltip = text_clipped;
+    const char* tooltip_label = label;
+    const char* tooltip_label_end = full_label_end;
+    if (hovered && tooltip_sep)
+    {
+        char formatted_name[256];
+        int tooltip_length = (int)(tooltip_label_end - tooltip_sep + 2);
+        int nl = snprintf(formatted_name, 256, "%.*s", tooltip_length, tooltip_sep + 2);
+        tooltip_label = formatted_name;
+        tooltip_label_end = tooltip_label + nl;
+        show_tooltip = true;
+    }
+    
+    if (show_tooltip && hovered && g.ActiveId == 0 && IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+        SetTooltip("%.*s", (int)(tooltip_label_end - tooltip_label), tooltip_label);
+    /// # END PATCH 2022-10-14
+	// ###############################################################################
 
     // We don't use BeginPopupContextItem() because we want the popup to stay up even after the column is hidden
     if (IsMouseReleased(1) && IsItemHovered())
@@ -3144,6 +3198,18 @@ void ImGui::TableDrawContextMenu(ImGuiTable* table)
             const char* name = TableGetColumnName(table, other_column_n);
             if (name == NULL || name[0] == 0)
                 name = "<Unknown>";
+
+			// ###############################################################################
+            /// # BEGIN PATCH 2022-10-14 (Use the characters || to distinguish between the displayed label and the tooltip label)
+            const char* name_sep = strstr(name, "||");
+            if (name_sep)
+            {
+                char formatted_name[256];
+                snprintf(formatted_name, 256, "%s", name_sep + 2);
+                name = formatted_name;
+            }
+            /// # END PATCH 2022-10-14
+			// ###############################################################################
 
             // Make sure we can't hide the last active column
             bool menu_item_active = (other_column->Flags & ImGuiTableColumnFlags_NoHide) ? false : true;
