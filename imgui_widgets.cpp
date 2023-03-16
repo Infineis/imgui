@@ -8003,6 +8003,27 @@ static ImGuiTabItem* ImGui::TabBarTabListPopupButton(ImGuiTabBar* tab_bar)
 // - TabItemLabelAndCloseButton() [Internal]
 //-------------------------------------------------------------------------
 
+// ###############################################################################
+int ImGui::GetTabItemVisibleIndex(const char* id)
+{
+    ImGuiContext& g = *GImGui;
+    ImGuiWindow* window = g.CurrentWindow;
+    if (window->SkipItems)
+        return false;
+
+    ImGuiTabBar* tab_bar = g.CurrentTabBar;
+    ImU32 tab_id = TabBarCalcTabID(tab_bar, id, NULL);
+
+    for (int n = 0, end = tab_bar->Tabs.Size; n != end; ++n)
+    {
+        if (tab_id == tab_bar->Tabs[n].ID)
+            return n;
+    }
+
+    return tab_bar->LastTabItemIdx;
+}
+// ###############################################################################
+
 bool    ImGui::BeginTabItem(const char* label, bool* p_open, ImGuiTabItemFlags flags)
 {
     ImGuiContext& g = *GImGui;
